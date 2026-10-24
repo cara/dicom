@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>DICOM Cine Viewer</title>
+  <meta name="description" content="DICOM-Viewer im Browser: Ordner öffnen, durch Bilder blättern, Cine-Loops abspielen und als MP4 exportieren. Alle Daten bleiben lokal.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cpath d='M4 17h6l2-6 4 12 3-9 2 3h7' fill='none' stroke='%2338bdf8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <!--STYLE-->
+</head>
+<body>
+<div id="app" class="no-data">
+  <header class="toolbar" role="toolbar" aria-label="Werkzeuge">
+    <div class="tb-group brand">
+      <button id="btn-sidebar" class="icon-btn" data-icon="menu" title="Serienliste ein-/ausblenden" aria-label="Serienliste"></button>
+      <span class="brand-name">DICOM <b>Cine</b></span>
+    </div>
+    <div class="tb-group">
+      <button id="btn-open-folder" class="btn primary" data-icon="folder" title="Ordner mit DICOM-Dateien öffnen"><span>Ordner öffnen</span></button>
+      <button id="btn-open-files" class="btn" data-icon="file" title="Einzelne DICOM-Dateien öffnen"><span class="hide-sm">Dateien</span></button>
+      <input type="file" id="input-folder" webkitdirectory directory multiple hidden>
+      <input type="file" id="input-files" multiple hidden>
+    </div>
+    <div class="tb-group needs-data" role="radiogroup" aria-label="Maus-Werkzeug">
+      <button class="btn tool active" data-tool="wl" data-icon="contrast" title="Fensterung (W) – ziehen: horizontal Breite, vertikal Zentrum" role="radio" aria-checked="true"><span class="hide-lg">Fenster</span></button>
+      <button class="btn tool" data-tool="pan" data-icon="move" title="Verschieben (P) – auch mittlere Maustaste oder Shift" role="radio" aria-checked="false"><span class="hide-lg">Pan</span></button>
+      <button class="btn tool" data-tool="zoom" data-icon="zoom" title="Zoom (Z) – auch rechte Maustaste oder Strg/⌘ + Mausrad" role="radio" aria-checked="false"><span class="hide-lg">Zoom</span></button>
+      <button class="btn tool" data-tool="scroll" data-icon="layers" title="Blättern durch Ziehen (S) – auch Alt + Ziehen" role="radio" aria-checked="false"><span class="hide-lg">Blättern</span></button>
+    </div>
+    <div class="tb-group needs-data">
+      <select id="sel-preset" class="select" title="Fenster-Voreinstellung" aria-label="Fenster-Voreinstellung"></select>
+      <button id="btn-invert" class="icon-btn" data-icon="invert" title="Invertieren (I)" aria-pressed="false" aria-label="Invertieren"></button>
+      <button id="btn-reset" class="icon-btn" data-icon="reset" title="Ansicht zurücksetzen (R)" aria-label="Zurücksetzen"></button>
+    </div>
+    <div class="tb-group tb-right">
+      <button id="btn-export" class="btn accent needs-data" data-icon="film" title="Aktuelle Serie als Video exportieren (E)"><span>Video</span></button>
+      <button id="btn-batch" class="btn needs-data" data-icon="stack" title="Mehrere/alle Serien als Videos exportieren (B)"><span class="hide-md">Alle als Video</span></button>
+      <button id="btn-png" class="icon-btn needs-data" data-icon="image" title="Aktuelles Bild als PNG speichern" aria-label="PNG speichern"></button>
+      <button id="btn-tags" class="icon-btn needs-data" data-icon="tags" title="DICOM-Tags anzeigen (T)" aria-pressed="false" aria-label="DICOM-Tags"></button>
+      <button id="btn-anon" class="icon-btn" data-icon="eyeoff" title="Patientendaten ausblenden (A)" aria-pressed="false" aria-label="Patientendaten ausblenden"></button>
+      <button id="btn-fullscreen" class="icon-btn hide-sm" data-icon="fullscreen" title="Vollbild (F)" aria-label="Vollbild"></button>
+      <button id="btn-help" class="icon-btn" data-icon="help" title="Hilfe und Tastenkürzel (?)" aria-label="Hilfe"></button>
+      <a id="btn-download" class="btn" data-icon="download" href="dicom-viewer.html" download="dicom-viewer.html" title="Offline-Version herunterladen (eine HTML-Datei, läuft ohne Internet)"><span class="hide-md">Offline</span></a>
+    </div>
+  </header>
+
+  <aside id="sidebar" aria-label="Serien">
+    <div id="series-list"></div>
+    <div id="sidebar-status" class="sidebar-status"></div>
+  </aside>
+
+  <main id="stage">
+    <div id="viewport">
+      <div class="overlay tl" id="ov-tl"></div>
+      <div class="overlay tr" id="ov-tr"></div>
+      <div class="overlay bl" id="ov-bl"></div>
+      <div class="overlay br" id="ov-br"></div>
+      <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">Lade …</span></div>
+      <div id="frame-error" class="frame-error" hidden></div>
+
+      <section id="empty" class="empty">
+        <div class="empty-card">
+          <h1>DICOM-Bilder ansehen &amp; als Video exportieren</h1>
+          <p class="lead">Ordner mit DICOM-Daten (z.&nbsp;B. von CD/DVD, PACS-Export oder Echo-/Angio-Anlage) hierher ziehen oder öffnen.</p>
+          <div class="empty-actions">
+            <button class="btn primary big" data-action="open-folder" data-icon="folder"><span>Ordner öffnen</span></button>
+            <button class="btn big" data-action="open-files" data-icon="file"><span>Dateien wählen</span></button>
+            <button class="btn big ghost" data-action="demo" data-icon="sparkle"><span>Demo laden</span></button>
+          </div>
+          <ul class="features">
+            <li><b>Blättern</b> mit Mausrad, Pfeiltasten oder Schieberegler</li>
+            <li><b>Cine-Wiedergabe</b> mit Bildrate aus den DICOM-Daten</li>
+            <li><b>MP4-Export</b> (H.264) – einzeln oder für den ganzen Ordner</li>
+            <li>Unkomprimiert, RLE, JPEG, JPEG Lossless, JPEG-LS, JPEG 2000, H.264</li>
+          </ul>
+          <p class="privacy"><span data-icon="shield"></span> Alle Daten werden ausschließlich lokal in Ihrem Browser verarbeitet. Es findet kein Upload statt.</p>
+        </div>
+      </section>
+      <div id="drop-hint" class="drop-hint" hidden><div>Ordner oder Dateien hier ablegen</div></div>
+    </div>
+
+    <div id="player" class="player needs-data" aria-label="Wiedergabe">
+      <div class="player-buttons">
+        <button id="btn-first" class="icon-btn" data-icon="first" title="Erstes Bild (Pos1)" aria-label="Erstes Bild"></button>
+        <button id="btn-prev" class="icon-btn" data-icon="prev" title="Vorheriges Bild (←)" aria-label="Vorheriges Bild"></button>
+        <button id="btn-play" class="icon-btn play" title="Wiedergabe/Pause (Leertaste)" aria-label="Wiedergabe"></button>
+        <button id="btn-next" class="icon-btn" data-icon="next" title="Nächstes Bild (→)" aria-label="Nächstes Bild"></button>
+        <button id="btn-last" class="icon-btn" data-icon="last" title="Letztes Bild (Ende)" aria-label="Letztes Bild"></button>
+      </div>
+      <div class="slider-wrap">
+        <div id="buffer-bar" class="buffer-bar"><div></div></div>
+        <input id="frame-slider" type="range" min="0" max="0" value="0" step="1" aria-label="Bild">
+      </div>
+      <span id="frame-label" class="frame-label">–</span>
+      <label class="fps" title="Bildrate der Wiedergabe (+/−)">
+        <input id="fps-input" type="number" min="1" max="120" step="1" value="15" aria-label="Bilder pro Sekunde"><span>fps</span>
+      </label>
+      <select id="loop-mode" class="select" aria-label="Wiedergabemodus" title="Wiedergabemodus">
+        <option value="loop">Schleife</option>
+        <option value="bounce">Hin &amp; zurück</option>
+        <option value="once">Einmal</option>
+      </select>
+    </div>
+  </main>
+
+  <aside id="tags-panel" class="tags-panel" hidden aria-label="DICOM-Tags">
+    <div class="tags-head">
+      <input id="tags-filter" type="search" placeholder="Tags filtern …" aria-label="Tags filtern">
+      <button id="btn-tags-close" class="icon-btn" data-icon="close" aria-label="Schließen"></button>
+    </div>
+    <div id="tags-file" class="tags-file"></div>
+    <div class="tags-scroll"><table id="tags-table"><tbody></tbody></table></div>
+  </aside>
+</div>
+
+<dialog id="dlg-export" class="dialog">
+  <form method="dialog" class="dialog-body">
+    <h2>Video exportieren</h2>
+    <p id="exp-source" class="muted"></p>
+    <div class="form-grid">
+      <label>Format
+        <select name="format">
+          <option value="mp4">MP4 (H.264) – PowerPoint, Keynote, Handy</option>
+          <option value="webm">WebM (VP9/VP8)</option>
+        </select>
+      </label>
+      <label>Bildrate (fps)
+        <input name="fps" type="number" min="1" max="240" step="0.5">
+        <small id="exp-fps-hint" class="muted"></small>
+      </label>
+      <label>Von Bild
+        <input name="from" type="number" min="1" step="1">
+      </label>
+      <label>Bis Bild
+        <input name="to" type="number" min="1" step="1">
+      </label>
+      <label>Wiederholungen
+        <input name="repeat" type="number" min="1" max="50" step="1" value="1">
+      </label>
+      <label class="check"><input name="bounce" type="checkbox"> Hin &amp; zurück</label>
+      <label>Größe
+        <select name="size"></select>
+      </label>
+      <label>Qualität
+        <select name="quality">
+          <option value="low">Klein</option>
+          <option value="medium">Mittel</option>
+          <option value="high" selected>Hoch</option>
+          <option value="max">Sehr hoch</option>
+        </select>
+      </label>
+      <label>Fensterung
+        <select name="window">
+          <option value="current">Aktuelle Ansicht</option>
+          <option value="dicom">DICOM-Standard</option>
+        </select>
+      </label>
+      <label>Beschriftung
+        <select name="overlay">
+          <option value="none">Keine</option>
+          <option value="series">Serie, Datum, Bildnummer</option>
+          <option value="patient">… inkl. Patientenname</option>
+        </select>
+      </label>
+    </div>
+    <p id="exp-warning" class="warning" hidden></p>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn">Abbrechen</button>
+      <button value="ok" class="btn primary" data-icon="film"><span>Exportieren</span></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-batch" class="dialog wide">
+  <form method="dialog" class="dialog-body">
+    <h2>Mehrere Serien als Videos exportieren</h2>
+    <div class="batch-select">
+      <div class="batch-select-head">
+        <label class="check"><input type="checkbox" id="batch-all"> Alle</label>
+        <button type="button" class="btn small" id="batch-cine">Nur Cine-Loops</button>
+        <span id="batch-count" class="muted"></span>
+      </div>
+      <div id="batch-list" class="batch-list"></div>
+    </div>
+    <div class="form-grid">
+      <label>Format
+        <select name="format">
+          <option value="mp4">MP4 (H.264)</option>
+          <option value="webm">WebM</option>
+        </select>
+      </label>
+      <label>Bildrate
+        <select name="fpsMode">
+          <option value="dicom">Aus DICOM (sonst Ersatzwert)</option>
+          <option value="fixed">Fest für alle</option>
+        </select>
+      </label>
+      <label>Ersatz-/feste Bildrate (fps)
+        <input name="fps" type="number" min="1" max="240" step="0.5" value="15">
+      </label>
+      <label>Wiederholungen
+        <input name="repeat" type="number" min="1" max="50" step="1" value="1">
+      </label>
+      <label>Größe
+        <select name="size">
+          <option value="0">Original</option>
+          <option value="720">max. 720 px</option>
+          <option value="1080">max. 1080 px</option>
+          <option value="2x">2× vergrößert (max. 1080 px)</option>
+        </select>
+      </label>
+      <label>Qualität
+        <select name="quality">
+          <option value="low">Klein</option>
+          <option value="medium">Mittel</option>
+          <option value="high" selected>Hoch</option>
+          <option value="max">Sehr hoch</option>
+        </select>
+      </label>
+      <label>Beschriftung
+        <select name="overlay">
+          <option value="none">Keine</option>
+          <option value="series">Serie, Datum, Bildnummer</option>
+          <option value="patient">… inkl. Patientenname</option>
+        </select>
+      </label>
+      <label>Dateinamen
+        <select name="naming">
+          <option value="anon">Datum_Nr_Serie (ohne Namen)</option>
+          <option value="patient">Patient_Datum_Nr_Serie</option>
+          <option value="source">Wie Quelldatei</option>
+        </select>
+      </label>
+      <label class="span2">Speichern in
+        <select name="target"></select>
+      </label>
+    </div>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn">Abbrechen</button>
+      <button value="ok" class="btn primary" data-icon="stack"><span>Videos erzeugen</span></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-progress" class="dialog">
+  <div class="dialog-body">
+    <h2 id="prog-title">Export</h2>
+    <p id="prog-text" class="muted"></p>
+    <div class="progress"><div id="prog-bar"></div></div>
+    <div id="prog-sub-wrap" class="progress thin" hidden><div id="prog-sub"></div></div>
+    <div id="prog-log" class="prog-log"></div>
+    <div class="dialog-actions">
+      <button id="prog-cancel" class="btn">Abbrechen</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-help" class="dialog wide">
+  <form method="dialog" class="dialog-body help">
+    <h2>Hilfe</h2>
+    <div class="help-cols">
+      <section>
+        <h3>Maus &amp; Trackpad</h3>
+        <dl>
+          <dt>Mausrad / 2-Finger-Wischen</dt><dd>Durch die Bilder blättern</dd>
+          <dt>Linke Maustaste ziehen</dt><dd>Aktives Werkzeug (Fenster, Pan, Zoom, Blättern)</dd>
+          <dt>Mittlere Taste / Shift + Ziehen</dt><dd>Verschieben</dd>
+          <dt>Rechte Taste ziehen</dt><dd>Zoom</dd>
+          <dt>Strg/⌘ + Mausrad, Pinch</dt><dd>Zoom an der Mausposition</dd>
+          <dt>Alt + Ziehen</dt><dd>Blättern</dd>
+          <dt>Doppelklick</dt><dd>Zoom/Pan zurücksetzen</dd>
+        </dl>
+      </section>
+      <section>
+        <h3>Tastatur</h3>
+        <dl>
+          <dt><kbd>Leertaste</kbd></dt><dd>Wiedergabe / Pause</dd>
+          <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Bild zurück / vor</dd>
+          <dt><kbd>Bild↑</kbd> <kbd>Bild↓</kbd></dt><dd>10 Bilder zurück / vor</dd>
+          <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Vorherige / nächste Serie</dd>
+          <dt><kbd>Pos1</kbd> <kbd>Ende</kbd></dt><dd>Erstes / letztes Bild</dd>
+          <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Bildrate erhöhen / verringern</dd>
+          <dt><kbd>W</kbd> <kbd>P</kbd> <kbd>Z</kbd> <kbd>S</kbd></dt><dd>Werkzeug Fenster / Pan / Zoom / Blättern</dd>
+          <dt><kbd>I</kbd> <kbd>R</kbd> <kbd>M</kbd></dt><dd>Invertieren / Zurücksetzen / Auto-Fenster (Min–Max)</dd>
+          <dt><kbd>E</kbd> <kbd>B</kbd></dt><dd>Video exportieren / alle als Video</dd>
+          <dt><kbd>T</kbd> <kbd>A</kbd> <kbd>F</kbd></dt><dd>Tags / Anonym / Vollbild</dd>
+        </dl>
+      </section>
+    </div>
+    <h3>Offline &amp; Datenschutz</h3>
+    <p>Die Anwendung läuft vollständig im Browser; DICOM-Dateien verlassen Ihren Rechner nicht. Über <b>Offline</b> laden Sie die komplette App als einzelne HTML-Datei herunter – per Doppelklick öffnen, auch ohne Internet.</p>
+    <p>Den Video-Export für einen ganzen Ordner direkt in einen Unterordner <i>Videos</i> unterstützen Chrome und Edge (Ordner per „Ordner öffnen“ wählen). In Firefox und Safari werden die Videos als ZIP heruntergeladen.</p>
+    <p class="warning">Kein Medizinprodukt. Nicht für die diagnostische Befundung bestimmt.</p>
+    <p class="muted small">Version <span id="app-version"></span> · Open-Source-Komponenten: dicom-parser, jpeg-lossless-decoder-js, OpenJPEG, CharLS, mp4-muxer, fflate.</p>
+    <div class="dialog-actions"><button class="btn primary" value="ok">Schließen</button></div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<!--SCRIPT-->
+</body>
+</html>
