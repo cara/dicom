@@ -1,0 +1,9 @@
+# Portainer: Stacks → Add stack → Repository (dieses Git-Repo) oder Web-Editor mit diesem Inhalt.
+services:
+  dicom-viewer:
+    build: .
+    image: dicom-cine-viewer:latest
+    container_name: dicom-viewer
+    ports:
+      - "8080:80"
+    restart: unless-stopped
